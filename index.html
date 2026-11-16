@@ -70,10 +70,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:transparent;font-famil
 body.demo{background:radial-gradient(ellipse at 70% 0%,#c2266f 0%,#6b1040 45%,#350a22 100%)}
 
 /* ===== janela ===== */
-.win{z-index:2;position:absolute;top:7vw;width:39.5vw;background:var(--janela);border:.3vw solid var(--escuro);
+#colunaquiz{position:absolute;top:2.2vw;width:39.5vw;z-index:2;display:flex;flex-direction:column;gap:.9vw;max-height:calc(100% - 4.4vw)}
+#colunaquiz.direita{right:2.2vw}#colunaquiz.esquerda{left:2.2vw}
+#colunaquiz.emcima{flex-direction:column-reverse}
+.win{flex:0 0 auto;position:relative;width:100%;background:var(--janela);border:.3vw solid var(--escuro);
   box-shadow:.6vw .6vw 0 #0006, inset .25vw .25vw 0 var(--janela2), inset -.25vw -.25vw 0 var(--vinho);
   transform-origin:top center;transition:transform .35s steps(5),opacity .35s steps(5)}
-.win.direita{right:2.2vw}.win.esquerda{left:2.2vw}
 .win.fechada{transform:scale(.5);opacity:0}
 .barra{display:flex;align-items:center;gap:.6vw;padding:.9vw 1vw .9vw 1.4vw;border-bottom:.3vw solid var(--vinho)}
 .barra .nome{flex:1;font:400 1.15vw "Space Mono",monospace;letter-spacing:.35vw}
@@ -163,10 +165,17 @@ body.demo{background:radial-gradient(ellipse at 70% 0%,#c2266f 0%,#6b1040 45%,#3
 .campeao b{color:var(--gema)}
 
 /* arquibancada de jogadores */
-#plateia{z-index:1;position:absolute;bottom:.8vw;width:39.5vw;display:flex;flex-wrap:wrap-reverse;gap:1vw .6vw;justify-content:center}
-#plateia.direita{right:2.2vw}#plateia.esquerda{left:2.2vw}
+#plateia{flex:0 1 auto;min-height:0;overflow:hidden;width:100%;display:flex;flex-wrap:wrap;gap:.9vw .55vw;justify-content:center;align-content:flex-start}
+#colunaquiz.emcima #plateia{align-content:flex-end}
 #plateia.some{display:none}
 .pav{position:relative;width:4.2vw;text-align:center;animation:popin .3s steps(4) both}
+#plateia.muitos .pav{width:3.4vw}
+#plateia.muitos .pplaca{font-size:.56vw}
+#plateia.muitos .pvoto{width:1.15vw;height:1.15vw;font-size:.75vw}
+#plateia.lotada .pav{width:2.7vw}
+#plateia.lotada .pplaca{font-size:.46vw}
+#plateia.lotada .pvoto{width:1vw;height:1vw;font-size:.62vw}
+#plateia.lotada .pav.campeao::before{font-size:1vw;top:-1.1vw}
 .pborda,.pquadro{clip-path:polygon(0 .38vw,.38vw .38vw,.38vw 0,calc(100% - .38vw) 0,calc(100% - .38vw) .38vw,100% .38vw,100% calc(100% - .38vw),calc(100% - .38vw) calc(100% - .38vw),calc(100% - .38vw) 100%,.38vw 100%,.38vw calc(100% - .38vw),0 calc(100% - .38vw))}
 .pborda{background:var(--escuro);padding:.13vw}
 .pquadro{background:var(--creme);padding:.3vw;transition:background .3s}
@@ -336,14 +345,16 @@ body.painel .win,body.painel #pops{display:none}
   </defs>
 </svg>
 
+<div id="colunaquiz">
 <div class="win" id="win">
   <div class="selo">RELÂMPAGO!<small>GEMAS x2</small></div>
   <div class="barra"><span class="nome" id="titulo">QI_DO_CHAT.EXE</span><span class="bt">_</span><span class="bt">□</span><span class="bt">×</span></div>
   <div class="faixa2"></div>
   <div class="corpo"><div class="rolagem"><i id="rol"></i></div><div id="conteudo"></div></div>
 </div>
-<div id="pops"></div>
 <div id="plateia"></div>
+</div>
+<div id="pops"></div>
 <div id="mascote">
   <div id="mcorpo">
     <img id="mimg" alt="">
@@ -383,6 +394,7 @@ const CONFIG = {
   janelaVelocidade: 8,        // segundos, contados a partir do PRIMEIRO acerto (anula o delay da Twitch)
   penalidadeErro: 10,         // gemas perdidas por resposta errada (0 = desligado; quem não vota não perde)
   lado: "direita",            // "direita" ou "esquerda"
+  plateiaEmCima: false,       // true = fotos acima do quiz, false = abaixo
   esperaPontos: 30,           // segundos entre dois !pontos da mesma pessoa
   /* premiação em pontos do canal — StreamElements (configure pelo painel) */
   sePremiar: "campeao",       // "desligado" | "campeao" | "top3" | "todos"
@@ -411,6 +423,7 @@ let STREAMER = "";   // nome de exibição do dono do canal (usado nas falas)
 if (P.get("canal")){ CONFIG.canal = P.get("canal"); if (!STREAMER) STREAMER = P.get("canal"); }
 if (P.get("streamer")) STREAMER = P.get("streamer");
 if (P.get("lado")) CONFIG.lado = P.get("lado");
+if (P.get("plateia") === "cima") CONFIG.plateiaEmCima = true;
 if (P.get("rodada")) CONFIG.perguntasPorRodada = Math.max(1, +P.get("rodada") || 10);
 if (P.get("tempo")) CONFIG.tempoPergunta = Math.max(5, +P.get("tempo") || 30);
 if (P.get("som") === "0") CONFIG.som = false;
@@ -2636,101 +2649,142 @@ function nota(f, ini, dur, tipo="square", vol=1){
   const a = audio(); if (!a) return;
   notaAbs(f, a.currentTime + ini, dur, tipo, vol);
 }
-/* ===== trilha sonora (chiptune com bateria, gerada pelo jogo — sem DMCA) ===== */
-const FREQ = { E2:82.41, F2:87.31, G2:98, A2:110, B2:123.47, C3:130.81, D3:146.83, E3:164.81, F3:174.61, G3:196,
-  A3:220, B3:246.94, C4:261.63, D4:293.66, E4:329.63, F4:349.23, G4:392, GS4:415.30, A4:440, B4:493.88,
-  C5:523.25, D5:587.33, E5:659.25, F5:698.46, G5:783.99, A5:880 };
+/* ===== trilha sonora lo-fi (gerada pelo jogo, sem DMCA) ===== */
+const NOTAF = n => 440 * Math.pow(2, (n - 69) / 12);
 
 let ruidoBuf = null;
 function ruidoBuffer(a){
   if (!ruidoBuf){
-    ruidoBuf = a.createBuffer(1, Math.floor(a.sampleRate * 0.2), a.sampleRate);
+    ruidoBuf = a.createBuffer(1, Math.floor(a.sampleRate * 0.3), a.sampleRate);
     const d = ruidoBuf.getChannelData(0); let p = 0;
     for (let i = 0; i < d.length; i++){ const w = Math.random() * 2 - 1; d[i] = w - p; p = w * 0.5; }
   }
   return ruidoBuf;
 }
-function bateria(tipo, t, vol = 1){
-  const a = audio(); if (!a) return;
-  if (tipo === "kick"){
-    const o = a.createOscillator(), g = a.createGain();
-    o.type = "sine";
-    o.frequency.setValueAtTime(130, t);
-    o.frequency.exponentialRampToValueAtTime(42, t + 0.09);
-    g.gain.setValueAtTime(Math.max(0.001, CONFIG.volume * 0.55 * vol), t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
-    o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.12);
-  } else {
-    const src = a.createBufferSource(); src.buffer = ruidoBuffer(a);
-    const g = a.createGain();
-    const dur = tipo === "snare" ? 0.09 : 0.03;
-    const v = CONFIG.volume * (tipo === "snare" ? 0.3 : 0.12) * vol;
-    g.gain.setValueAtTime(Math.max(0.001, v), t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    src.connect(g).connect(a.destination); src.start(t); src.stop(t + dur + 0.02);
-    if (tipo === "snare") notaAbs(190, t, 0.04, "square", 0.5 * vol);
+
+let _rev = null;
+function reverbBus(){
+  const a = audio(); if (!a) return null;
+  if (!_rev){
+    const dec = 0.7, n = Math.floor(a.sampleRate * dec);
+    const buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / a.sampleRate * 7);
+    _rev = a.createConvolver(); _rev.buffer = buf;
+    const g = a.createGain(); g.gain.value = 0.42;
+    _rev.connect(g).connect(a.destination);
   }
+  return _rev;
+}
+function saida(a, g){ g.connect(a.destination); const r = reverbBus(); if (r) g.connect(r); }
+
+function vozRhodes(freq, t, dur, vol){
+  const a = audio(); if (!a) return;
+  const g = a.createGain(), f = a.createBiquadFilter();
+  f.type = "lowpass"; f.frequency.value = 1800;
+  const v = Math.max(0.0008, CONFIG.volume * 0.30 * vol);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0005, v * 0.3), t + 0.6);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  [[1, 1], [2, 0.22], [3, 0.06]].forEach(([h, amp]) => {
+    const o = a.createOscillator(); o.type = "sine"; o.frequency.value = freq * h;
+    const hg = a.createGain(); hg.gain.value = amp;
+    o.connect(hg).connect(f); o.start(t); o.stop(t + dur + 0.05);
+  });
+  const lfo = a.createOscillator(), lg = a.createGain();
+  lfo.type = "sine"; lfo.frequency.value = 4.5; lg.gain.value = v * 0.05;
+  lfo.connect(lg).connect(g.gain); lfo.start(t); lfo.stop(t + dur + 0.05);
+  f.connect(g); saida(a, g);
+}
+function vozBaixo(freq, t, dur, vol){
+  const a = audio(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = "sine"; o.frequency.value = freq;
+  const v = Math.max(0.0008, CONFIG.volume * 0.5 * vol);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.015);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0005, v * 0.45), t + 0.3);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g); saida(a, g); o.start(t); o.stop(t + dur + 0.05);
+}
+function vozSino(freq, t, vol){
+  const a = audio(); if (!a) return;
+  const g = a.createGain();
+  const v = Math.max(0.0005, CONFIG.volume * 0.18 * vol);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+  [[1, 1], [2.76, 0.3]].forEach(([h, amp]) => {
+    const o = a.createOscillator(); o.type = "sine"; o.frequency.value = freq * h;
+    const hg = a.createGain(); hg.gain.value = amp;
+    o.connect(hg).connect(g); o.start(t); o.stop(t + 1.5);
+  });
+  saida(a, g);
+}
+function vozBumbo(t, vol){
+  const a = audio(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(110, t);
+  o.frequency.exponentialRampToValueAtTime(46, t + 0.1);
+  const v = Math.max(0.0008, CONFIG.volume * 0.5 * vol);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+  o.connect(g); g.connect(a.destination);
+  o.start(t); o.stop(t + 0.3);
+}
+function vozVassoura(t, vol, dur){
+  const a = audio(); if (!a) return;
+  dur = dur || 0.14;
+  const src = a.createBufferSource(); src.buffer = ruidoBuffer(a);
+  const f = a.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 3000;
+  const g = a.createGain();
+  const v = Math.max(0.0005, CONFIG.volume * 0.3 * vol);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  src.connect(f).connect(g); saida(a, g);
+  src.start(t); src.stop(t + dur + 0.02);
 }
 
 const TRILHA = (() => {
-  const P = {
-    /* lobby bossa: abertura, pausa e ranking */
-    calma: { bpm:96, div:4, swing:0.055, timbre:"triangle", volMel:0.5, volBx:0.85,
-      hat:[0,2,4,6,8,10,12,14], rim:[3,6,10,13], kick:[], snare:[],
-      bars:[
-        { bx:[[0,"C3",3],[6,"G2",2.6],[12,"C3",2]], mel:[[2,"E4"],[4,"G4"],[7,"B4"],[10,"A4"],[12,"G4"]] },
-        { bx:[[0,"A2",3],[6,"E3",2.6],[12,"A2",2]], mel:[[0,"A4"],[4,"E4"],[8,"C4"],[11,"D4"],[14,"E4"]] },
-        { bx:[[0,"D3",3],[6,"A2",2.6],[12,"D3",2]], mel:[[2,"F4"],[4,"A4"],[7,"C5"],[10,"A4"],[12,"F4"]] },
-        { bx:[[0,"G2",3],[6,"D3",2.6],[12,"G2",2]], mel:[[0,"B3"],[4,"G4"],[8,"F4"],[10,"D4"],[14,"G4"]] }
-      ] },
-    /* tensão da pergunta */
-    tensa: { bpm:126, div:2, swing:0, timbre:"square", volMel:0.3, pulso:true,
-      hat:[1,3,5,7], rim:null, kick:[0,4], snare:[2,6],
-      bars:[
-        { r:"A2", mel:[[0,"A4",2],[6,"C5",1.5]] },
-        { r:"A2", mel:[[0,"B4",1.5],[4,"E5",2]] },
-        { r:"F2", mel:[[0,"F5",1],[2,"E5",1],[4,"C5",2]] },
-        { r:"G2", mel:[[0,"B4",1],[2,"GS4",1],[4,"A4",3]] }
-      ] },
-    rapida: null
+  const ACORDES = [[45,52,56,62],[41,48,52,57],[43,50,55,59],[38,45,50,55]];
+  const CLIMAS = {
+    calma:  { bpm: 74, bateria: 0.75, rhodes: 1.0,  baixo: 0.95, sino: true },
+    tensa:  { bpm: 86, bateria: 1.0,  rhodes: 0.95, baixo: 1.1,  sino: true },
+    rapida: { bpm: 108, bateria: 1.15, rhodes: 0.85, baixo: 1.2, sino: false }
   };
-  P.rapida = Object.assign({}, P.tensa, { bpm:176, kick:[0,2,4,6], hat:[0,1,2,3,4,5,6,7] });
+  let timer = null, tocando = null, proxCompasso = 0, compasso = 0;
 
-  let timer = null, tocando = null, prox = 0, passo = 0;
-  function agendarPasso(t0, trk, idx){
-    const n = trk.div === 4 ? 16 : 8;
-    const bar = trk.bars[Math.floor(idx / n) % trk.bars.length];
-    const st = idx % n;
-    const dur = 60 / trk.bpm / trk.div;
-    const t = t0 + (st % 2 ? (trk.swing || 0) : 0);
-    if (trk.pulso){
-      notaAbs(FREQ[bar.r] * (st === 6 ? 2 : 1), t, dur * 0.8, "square", st % 2 ? 0.4 : 0.55);
-    } else if (bar.bx){
-      for (const [s, nn, d] of bar.bx) if (s === st) notaAbs(FREQ[nn], t, dur * (d || 2), "triangle", trk.volBx);
+  function agendarCompasso(t0, c){
+    const b = 60 / c.bpm;
+    const ac = ACORDES[compasso % ACORDES.length];
+    ac.forEach((n, i) => vozRhodes(NOTAF(n), t0 + 0.5 * b + i * 0.06, 3.2 * b, c.rhodes));
+    vozBaixo(NOTAF(ac[0] - 12), t0, 1.6 * b, c.baixo);
+    vozBaixo(NOTAF(ac[2] - 12), t0 + 2.5 * b, 1.6 * b, c.baixo);
+    if (c.sino && compasso % 2 === 1) vozSino(NOTAF(ac[3] + 12), t0 + 2 * b, 1);
+    if (c.bateria){
+      vozBumbo(t0, 0.85 * c.bateria);
+      vozBumbo(t0 + 2.5 * b, 0.6 * c.bateria);
+      vozVassoura(t0 + 1 * b, 0.45 * c.bateria);
+      vozVassoura(t0 + 3 * b, 0.45 * c.bateria);
+      for (const k of [0.5, 1.5, 2.5, 3.5]) vozVassoura(t0 + k * b, 0.22 * c.bateria, 0.09);
     }
-    if (bar.mel) for (const ev of bar.mel) if (ev[0] === st) notaAbs(FREQ[ev[1]], t, dur * (ev[2] || 2.6), trk.timbre, trk.volMel);
-    if (trk.kick.includes(st)) bateria("kick", t);
-    if (trk.snare.includes(st)) bateria("snare", t);
-    if (trk.hat.includes(st)) bateria("hat", t);
-    if (trk.rim && trk.rim.includes(st)) notaAbs(1660, t, 0.03, "square", 0.3);
   }
   function loop(){
     if (!tocando || !CONFIG.trilha) return;
     const a = audio(); if (!a) return;
-    const trk = P[tocando];
-    const dur = 60 / trk.bpm / trk.div;
-    if (prox < a.currentTime) prox = a.currentTime + 0.05;
-    while (prox < a.currentTime + 0.6){
-      agendarPasso(prox, trk, passo);
-      passo++; prox += dur;
+    const c = CLIMAS[tocando], durC = 4 * 60 / c.bpm;
+    if (proxCompasso < a.currentTime) proxCompasso = a.currentTime + 0.08;
+    while (proxCompasso < a.currentTime + 1.2){
+      agendarCompasso(proxCompasso, c);
+      compasso++; proxCompasso += durC;
     }
   }
   return {
     tocar(nome){
       if (!CONFIG.trilha || !CONFIG.som){ this.parar(); return; }
       if (tocando === nome) return;
-      tocando = nome; prox = 0; passo = 0;
-      if (!timer) timer = setInterval(loop, 200);
+      tocando = nome; proxCompasso = 0;
+      if (!timer) timer = setInterval(loop, 250);
       loop();
     },
     parar(){ tocando = null; },
@@ -2743,15 +2797,16 @@ function trilhaDoEstado(){
   else TRILHA.parar();
 }
 
+function sinoRel(f, atraso, vol){ const a = audio(); if (!a) return; vozSino(f, a.currentTime + atraso, vol); }
 const SOM = {
-  abrir(){ nota(330,0,.08,"triangle"); nota(660,.08,.14,"triangle"); },
-  pergunta(){ [523,659,784].forEach((f,i)=>nota(f,i*.08,.12)); },
-  tique(){ nota(1046,0,.05,"square",.6); },
-  revelar(){ [392,523,659,784,1046].forEach((f,i)=>nota(f,i*.07,.16)); },
-  ninguem(){ [392,370,349,330].forEach((f,i)=>nota(f,i*.15,.2,"triangle")); },
-  relampago(){ for (let i=0;i<6;i++) nota(i%2?740:1180, i*.09, .08, "sawtooth", .7); },
-  vitoria(){ [[523,0],[523,.12],[523,.24],[659,.36],[784,.6],[659,.84],[784,1],[1046,1.2]].forEach(([f,t])=>nota(f,t,.22)); },
-  pop(){ nota(880,0,.06); nota(1320,.07,.08); }
+  abrir(){ sinoRel(523,0,.5); sinoRel(784,.1,.4); },
+  pergunta(){ [523,659,784].forEach((f,i)=>sinoRel(f,i*.09,.45)); },
+  tique(){ nota(1046,0,.05,"square",.45); },
+  revelar(){ [523,659,784,1046].forEach((f,i)=>sinoRel(f,i*.08,.6)); },
+  ninguem(){ [392,349,311].forEach((f,i)=>sinoRel(f,i*.16,.5)); },
+  relampago(){ for (let i=0;i<5;i++) nota(i%2?740:1180, i*.09, .08, "triangle", .55); },
+  vitoria(){ [[523,0],[659,.14],[784,.28],[1046,.42],[784,.72],[1046,.86],[1318,1.0]].forEach(([f,t])=>sinoRel(f,t,.7)); },
+  pop(){ sinoRel(1046,0,.35); }
 };
 
 /* ================= ESTADO DO JOGO ================= */
@@ -2766,8 +2821,14 @@ let conectado = false, wsChat = null;
 const esperaPontos = new Map();
 
 const win = $("#win"), conteudo = $("#conteudo");
-win.classList.add(CONFIG.lado === "esquerda" ? "esquerda" : "direita");
-$("#pops").className = CONFIG.lado === "esquerda" ? "esquerda" : "direita";
+function posicionarColuna(){
+  const col = document.getElementById("colunaquiz"); if (!col) return;
+  col.className = (CONFIG.lado === "esquerda" ? "esquerda" : "direita") + (CONFIG.plateiaEmCima ? " emcima" : "");
+  const pops = document.getElementById("pops"); if (pops) pops.className = CONFIG.lado === "esquerda" ? "esquerda" : "direita";
+  const masc = document.getElementById("mascote");
+  if (masc){ masc.classList.remove("esq", "dir"); masc.classList.add(CONFIG.lado === "esquerda" ? "dir" : "esq"); }
+}
+posicionarColuna();
 
 function tela(titulo, html){
   $("#titulo").textContent = titulo;
@@ -3158,6 +3219,12 @@ function plateiaMais(){
   if (!m){ m = document.createElement("div"); m.id = "pavmais"; m.className = "pavmais"; document.getElementById("plateia").appendChild(m); }
   m.textContent = "+" + avExtras;
 }
+function plateiaDensidade(){
+  const el = document.getElementById("plateia"); if (!el) return;
+  const n = AV.size;
+  el.classList.toggle("muitos", n > 8 && n <= 14);
+  el.classList.toggle("lotada", n > 14);
+}
 function plateiaAdd(login, nome){
   if (!CONFIG.plateia || AV.has(login)) return;
   if (AV.size >= CONFIG.plateiaMax){ AV.set(login, null); avExtras++; plateiaMais(); return; }
@@ -3175,6 +3242,7 @@ function plateiaAdd(login, nome){
   el.appendChild(borda); el.appendChild(voto); el.appendChild(placa);
   document.getElementById("plateia").appendChild(el);
   AV.set(login, el);
+  plateiaDensidade();
 }
 function plateiaReset(){ AV.forEach(el => { if (el) el.className = "pav"; }); }
 function plateiaMarcar(){
@@ -3188,7 +3256,7 @@ function plateiaMarcar(){
   });
 }
 function plateiaCampeao(login){ const el = AV.get(login); if (el) el.className = "pav campeao"; }
-function plateiaLimpar(){ AV.clear(); avExtras = 0; document.getElementById("plateia").innerHTML = ""; }
+function plateiaLimpar(){ AV.clear(); avExtras = 0; const el = document.getElementById("plateia"); el.innerHTML = ""; el.classList.remove("muitos", "lotada"); }
 
 /* ================= MASCOTE APRESENTADOR ================= */
 const FALAS = {
@@ -3640,6 +3708,7 @@ function aplicarConfig(){
   if (cfg.mostrarVotosAoVivo != null) CONFIG.mostrarVotosAoVivo = !!cfg.mostrarVotosAoVivo;
   if (cfg.trilha != null){ CONFIG.trilha = !!cfg.trilha; if (!CONFIG.trilha && typeof TRILHA !== "undefined") TRILHA.parar(); }
   if (cfg.plateia != null) CONFIG.plateia = !!cfg.plateia;
+  if (cfg.plateiaEmCima != null){ CONFIG.plateiaEmCima = !!cfg.plateiaEmCima; if (typeof posicionarColuna === "function") posicionarColuna(); }
   if (cfg.mascote != null){ CONFIG.mascote = !!cfg.mascote; const m = document.getElementById("mascote"); if (m) m.style.display = CONFIG.mascote ? "" : "none"; }
   if (cfg.pesoVelocidade != null && cfg.pesoVelocidade !== "") CONFIG.pesoVelocidade = Math.min(1, Math.max(0, +cfg.pesoVelocidade));
   if (+cfg.janelaVelocidade > 0) CONFIG.janelaVelocidade = +cfg.janelaVelocidade;
@@ -3831,6 +3900,7 @@ function montarPainel(){
         <label class="pchk"><input type="checkbox" id="c_votos"> barras de votos ao vivo</label>
         <label class="pchk"><input type="checkbox" id="c_trilha"> música de fundo</label>
         <label class="pchk"><input type="checkbox" id="c_plateia"> fotos dos jogadores na tela</label>
+        <label class="pchk"><input type="checkbox" id="c_platcima"> fotos acima do quiz</label>
         <label class="pchk"><input type="checkbox" id="c_mascote"> mascote apresentador</label>
         <button class="pbtn" id="pcfg">Salvar configurações</button>
       </div>
@@ -3851,6 +3921,7 @@ function montarPainel(){
   $("#c_votos").checked = cfg0.mostrarVotosAoVivo != null ? !!cfg0.mostrarVotosAoVivo : CONFIG.mostrarVotosAoVivo;
   $("#c_trilha").checked = cfg0.trilha != null ? !!cfg0.trilha : CONFIG.trilha;
   $("#c_plateia").checked = cfg0.plateia != null ? !!cfg0.plateia : CONFIG.plateia;
+  $("#c_platcima").checked = cfg0.plateiaEmCima != null ? !!cfg0.plateiaEmCima : CONFIG.plateiaEmCima;
   $("#c_mascote").checked = cfg0.mascote != null ? !!cfg0.mascote : CONFIG.mascote;
   $("#c_vol").value = Math.round((cfg0.volume != null ? +cfg0.volume : CONFIG.volume) * 100);
   $("#c_peso").value = Math.round((cfg0.pesoVelocidade != null ? +cfg0.pesoVelocidade : CONFIG.pesoVelocidade) * 100);
@@ -4069,6 +4140,7 @@ function montarPainel(){
         som: $("#c_som").checked, mostrarVotosAoVivo: $("#c_votos").checked,
         trilha: $("#c_trilha").checked,
         plateia: $("#c_plateia").checked,
+        plateiaEmCima: $("#c_platcima").checked,
         mascote: $("#c_mascote").checked,
         volume: Math.min(100, Math.max(0, +$("#c_vol").value || 0)) / 100,
         pesoVelocidade: Math.min(100, Math.max(0, +$("#c_peso").value || 0)) / 100,
@@ -4117,9 +4189,7 @@ if (PAINEL){
   aplicarConfig(); aplicarBanco(); aplicarFalas();
   try { REV_ATUAL = localStorage.getItem(K_REV); } catch(e){}
   win.classList.remove("direita", "esquerda"); win.classList.add(CONFIG.lado === "esquerda" ? "esquerda" : "direita");
-  document.getElementById("pops").className = CONFIG.lado === "esquerda" ? "esquerda" : "direita";
-  document.getElementById("plateia").className = CONFIG.lado === "esquerda" ? "esquerda" : "direita";
-  document.getElementById("mascote").classList.add(CONFIG.lado === "esquerda" ? "dir" : "esq");
+  posicionarColuna();
   mascoteInit();
   if (DEMO){ document.body.classList.add("demo"); CONFIG.tempoPergunta = 12; CONFIG.tempoRelampago = 8; CONFIG.tempoResultado = 6; CONFIG.perguntasPorRodada = 5; }
   if (!CONFIG.canal && !DEMO){ mostrarEntrada(); }
