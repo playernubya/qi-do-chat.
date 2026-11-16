@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><title>QI do Chat — Painel</title>
+<script>
+/* O painel é a própria página do jogo em modo painel. Mantemos o endereço
+   terminado em painel.html para servir de redirect URI do login da Twitch. */
+(function(){
+  var h = location.hash || "";
+  if (h.indexOf("access_token=") >= 0) return;   // retorno do login: fica aqui mesmo
+  location.replace("index.html?painel");
+})();
+</script>
+</head>
+<body style="background:#1b0712;color:#f7d4ae;font-family:monospace;padding:30px">
+Abrindo o painel...
+<script>
+if ((location.hash || "").indexOf("access_token=") >= 0) location.replace("index.html?painel" + location.hash);
+</script>
+</body>
+</html>
