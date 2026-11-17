@@ -384,7 +384,7 @@ const CONFIG = {
   temaPadrao: "mix",
   mostrarVotosAoVivo: true,
   som: true,
-  volume: 0.5,                // 0 a 1
+  volume: 0.34,               // 0 a 1 (a trilha entra discreta por padrão)
   trilha: true,               // música de fundo gerada pelo jogo (sem risco de DMCA)
   plateia: true,              // arquibancada com as fotos de quem está jogando
   plateiaMax: 20,             // máximo de fotos na tela (o resto vira contador +N)
@@ -2649,131 +2649,183 @@ function nota(f, ini, dur, tipo="square", vol=1){
   const a = audio(); if (!a) return;
   notaAbs(f, a.currentTime + ini, dur, tipo, vol);
 }
-/* ===== trilha sonora lo-fi (gerada pelo jogo, sem DMCA) ===== */
+/* ===== trilha de bossa (violão de corda modelada, gerada pelo jogo — sem DMCA) ===== */
 const NOTAF = n => 440 * Math.pow(2, (n - 69) / 12);
 
 let ruidoBuf = null;
 function ruidoBuffer(a){
   if (!ruidoBuf){
-    ruidoBuf = a.createBuffer(1, Math.floor(a.sampleRate * 0.3), a.sampleRate);
-    const d = ruidoBuf.getChannelData(0); let p = 0;
-    for (let i = 0; i < d.length; i++){ const w = Math.random() * 2 - 1; d[i] = w - p; p = w * 0.5; }
+    ruidoBuf = a.createBuffer(1, Math.floor(a.sampleRate * 0.4), a.sampleRate);
+    const d = ruidoBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   }
   return ruidoBuf;
 }
 
-let _rev = null;
-function reverbBus(){
-  const a = audio(); if (!a) return null;
-  if (!_rev){
-    const dec = 0.7, n = Math.floor(a.sampleRate * dec);
-    const buf = a.createBuffer(1, n, a.sampleRate), d = buf.getChannelData(0);
-    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / a.sampleRate * 7);
-    _rev = a.createConvolver(); _rev.buffer = buf;
-    const g = a.createGain(); g.gain.value = 0.42;
-    _rev.connect(g).connect(a.destination);
+/* ---- corda beliscada: modelo físico (Karplus-Strong), pré-gerado uma vez ---- */
+const CORDAS = {};
+function cordaBuffer(a, midi, variacao){
+  const chave = midi + "_" + variacao;
+  if (CORDAS[chave]) return CORDAS[chave];
+  const sr = a.sampleRate, f = NOTAF(midi);
+  const L = Math.max(2, Math.round(sr / f));
+  const n = Math.floor(sr * 1.9);
+  const buf = a.createBuffer(1, n, sr), out = buf.getChannelData(0);
+  const b = new Float32Array(L);
+  let z = 0, semente = midi * 7 + variacao * 131;
+  const rnd = () => { semente = (semente * 1103515245 + 12345) & 0x7fffffff; return semente / 0x7fffffff * 2 - 1; };
+  const corte = Math.exp(-2 * Math.PI * 3200 / sr);
+  for (let i = 0; i < L; i++){
+    z = (1 - corte) * rnd() + corte * z;
+    b[i] = z * (1 - 0.75 * i / L);
   }
-  return _rev;
+  const damp = 0.9965;
+  let idx = 0;
+  for (let i = 0; i < n; i++){
+    const cur = b[idx], nxt = b[(idx + 1) % L];
+    out[i] = cur;
+    b[idx] = (cur + nxt) * 0.5 * damp;
+    idx = (idx + 1) % L;
+  }
+  const atq = Math.floor(sr * 0.004);
+  for (let i = 0; i < atq; i++) out[i] *= i / atq;
+  CORDAS[chave] = buf;
+  return buf;
 }
-function saida(a, g){ g.connect(a.destination); const r = reverbBus(); if (r) g.connect(r); }
 
-function vozRhodes(freq, t, dur, vol){
-  const a = audio(); if (!a) return;
-  const g = a.createGain(), f = a.createBiquadFilter();
-  f.type = "lowpass"; f.frequency.value = 1800;
-  const v = Math.max(0.0008, CONFIG.volume * 0.30 * vol);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(v, t + 0.03);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0005, v * 0.3), t + 0.6);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  [[1, 1], [2, 0.22], [3, 0.06]].forEach(([h, amp]) => {
-    const o = a.createOscillator(); o.type = "sine"; o.frequency.value = freq * h;
-    const hg = a.createGain(); hg.gain.value = amp;
-    o.connect(hg).connect(f); o.start(t); o.stop(t + dur + 0.05);
-  });
-  const lfo = a.createOscillator(), lg = a.createGain();
-  lfo.type = "sine"; lfo.frequency.value = 4.5; lg.gain.value = v * 0.05;
-  lfo.connect(lg).connect(g.gain); lfo.start(t); lfo.stop(t + dur + 0.05);
-  f.connect(g); saida(a, g);
+let _master = null, _rev = null;
+function barramento(){
+  const a = audio(); if (!a) return null;
+  if (!_master){
+    const corpo1 = a.createBiquadFilter(); corpo1.type = "peaking"; corpo1.frequency.value = 104; corpo1.Q.value = 7; corpo1.gain.value = 4;
+    const corpo2 = a.createBiquadFilter(); corpo2.type = "peaking"; corpo2.frequency.value = 218; corpo2.Q.value = 6; corpo2.gain.value = 2.5;
+    _master = a.createGain(); _master.gain.value = 1;
+    _master.connect(corpo1).connect(corpo2).connect(a.destination);
+    const n = Math.floor(a.sampleRate * 0.5), ir = a.createBuffer(1, n, a.sampleRate), d = ir.getChannelData(0);
+    let z = 0; const k = Math.exp(-2 * Math.PI * 3500 / a.sampleRate);
+    for (let i = 0; i < n; i++){ z = (1 - k) * (Math.random() * 2 - 1) + k * z; d[i] = z * Math.exp(-i / a.sampleRate * 8); }
+    _rev = a.createConvolver(); _rev.buffer = ir;
+    const rg = a.createGain(); rg.gain.value = 0.3;
+    _rev.connect(rg).connect(corpo1);
+  }
+  return _master;
 }
-function vozBaixo(freq, t, dur, vol){
-  const a = audio(); if (!a) return;
-  const o = a.createOscillator(), g = a.createGain();
-  o.type = "sine"; o.frequency.value = freq;
-  const v = Math.max(0.0008, CONFIG.volume * 0.5 * vol);
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.linearRampToValueAtTime(v, t + 0.015);
-  g.gain.exponentialRampToValueAtTime(Math.max(0.0005, v * 0.45), t + 0.3);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g); saida(a, g); o.start(t); o.stop(t + dur + 0.05);
+function ligar(a, no, pan){
+  const m = barramento(); if (!m) return;
+  if (pan && a.createStereoPanner){
+    const p = a.createStereoPanner(); p.pan.value = pan;
+    no.connect(p); p.connect(m); if (_rev) p.connect(_rev);
+  } else { no.connect(m); if (_rev) no.connect(_rev); }
 }
-function vozSino(freq, t, vol){
+
+function tocarCorda(midi, t, dur, vol, pan){
   const a = audio(); if (!a) return;
+  t = Math.max(t, a.currentTime + 0.002);
+  const src = a.createBufferSource();
+  src.buffer = cordaBuffer(a, midi, Math.floor(Math.random() * 2));
+  src.playbackRate.value = 1 + (Math.random() - 0.5) * 0.004;   // afinação viva
   const g = a.createGain();
-  const v = Math.max(0.0005, CONFIG.volume * 0.18 * vol);
+  const v = Math.max(0.0006, CONFIG.volume * 0.26 * vol);
   g.gain.setValueAtTime(v, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
-  [[1, 1], [2.76, 0.3]].forEach(([h, amp]) => {
-    const o = a.createOscillator(); o.type = "sine"; o.frequency.value = freq * h;
-    const hg = a.createGain(); hg.gain.value = amp;
-    o.connect(hg).connect(g); o.start(t); o.stop(t + 1.5);
-  });
-  saida(a, g);
+  g.gain.setValueAtTime(v, t + Math.max(0.05, dur - 0.09));
+  g.gain.linearRampToValueAtTime(0.0001, t + dur);
+  src.connect(g); ligar(a, g, pan);
+  src.start(t); src.stop(t + dur + 0.05);
 }
-function vozBumbo(t, vol){
+function tocarBaixo(midi, t, dur, vol){
   const a = audio(); if (!a) return;
+  t = Math.max(t, a.currentTime + 0.002);
+  const f = NOTAF(midi), g = a.createGain();
+  const v = Math.max(0.0008, CONFIG.volume * 0.42 * vol);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(v, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  [[1, 1], [2, 0.3], [3, 0.1]].forEach(([h, amp]) => {
+    const o = a.createOscillator(); o.type = "sine"; o.frequency.value = f * h;
+    const hg = a.createGain(); hg.gain.value = amp;
+    o.connect(hg).connect(g); o.start(t); o.stop(t + dur + 0.05);
+  });
+  ligar(a, g, -0.05);
+}
+function tocarGanza(t, acento){
+  const a = audio(); if (!a) return;
+  t = Math.max(t, a.currentTime + 0.002);
+  const src = a.createBufferSource(); src.buffer = ruidoBuffer(a);
+  const hp = a.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 3800;
+  const g = a.createGain();
+  const v = Math.max(0.0004, CONFIG.volume * 0.13 * acento);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + (acento > 0.9 ? 0.085 : 0.055));
+  src.connect(hp).connect(g); ligar(a, g, 0.3);
+  src.start(t, Math.random() * 0.2); src.stop(t + 0.12);
+}
+function tocarAro(t, vol){
+  const a = audio(); if (!a) return;
+  t = Math.max(t, a.currentTime + 0.002);
+  const src = a.createBufferSource(); src.buffer = ruidoBuffer(a);
+  const bp = a.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1750; bp.Q.value = 9;
+  const bp2 = a.createBiquadFilter(); bp2.type = "bandpass"; bp2.frequency.value = 420; bp2.Q.value = 6;
+  const g = a.createGain();
+  const v = Math.max(0.0004, CONFIG.volume * 0.4 * vol);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+  src.connect(bp).connect(g); src.connect(bp2).connect(g);
+  ligar(a, g, 0.18);
+  src.start(t, Math.random() * 0.2); src.stop(t + 0.15);
+}
+function tocarSurdo(t, vol){
+  const a = audio(); if (!a) return;
+  t = Math.max(t, a.currentTime + 0.002);
   const o = a.createOscillator(), g = a.createGain();
   o.type = "sine";
-  o.frequency.setValueAtTime(110, t);
-  o.frequency.exponentialRampToValueAtTime(46, t + 0.1);
-  const v = Math.max(0.0008, CONFIG.volume * 0.5 * vol);
+  o.frequency.setValueAtTime(92, t);
+  o.frequency.exponentialRampToValueAtTime(58, t + 0.18);
+  const v = Math.max(0.0006, CONFIG.volume * 0.3 * vol);
   g.gain.setValueAtTime(v, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
-  o.connect(g); g.connect(a.destination);
-  o.start(t); o.stop(t + 0.3);
-}
-function vozVassoura(t, vol, dur){
-  const a = audio(); if (!a) return;
-  dur = dur || 0.14;
-  const src = a.createBufferSource(); src.buffer = ruidoBuffer(a);
-  const f = a.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 3000;
-  const g = a.createGain();
-  const v = Math.max(0.0005, CONFIG.volume * 0.3 * vol);
-  g.gain.setValueAtTime(v, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(f).connect(g); saida(a, g);
-  src.start(t); src.stop(t + dur + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.4);
+  o.connect(g); ligar(a, g, 0);
+  o.start(t); o.stop(t + 0.45);
 }
 
 const TRILHA = (() => {
-  const ACORDES = [[45,52,56,62],[41,48,52,57],[43,50,55,59],[38,45,50,55]];
+  const PROG = [[53,57,60,64],[55,58,62,65],[52,55,60,64],[53,57,60,64]];
+  const RAIZ = [41, 43, 36, 41];
+  const LEVADA = [[0, 1], [0.75, 0.72], [1.5, 0.9], [2.25, 0.68], [3, 0.85], [3.5, 0.6]];
   const CLIMAS = {
-    calma:  { bpm: 74, bateria: 0.75, rhodes: 1.0,  baixo: 0.95, sino: true },
-    tensa:  { bpm: 86, bateria: 1.0,  rhodes: 0.95, baixo: 1.1,  sino: true },
-    rapida: { bpm: 108, bateria: 1.15, rhodes: 0.85, baixo: 1.2, sino: false }
+    calma:  { bpm: 120, viola: 0.85, ganza: 0.7, surdo: false },
+    tensa:  { bpm: 134, viola: 1.0,  ganza: 1.0, surdo: true },
+    rapida: { bpm: 156, viola: 1.05, ganza: 1.15, surdo: true }
   };
   let timer = null, tocando = null, proxCompasso = 0, compasso = 0;
+  const jitter = f => (Math.random() - 0.5) * f;
 
   function agendarCompasso(t0, c){
-    const b = 60 / c.bpm;
-    const ac = ACORDES[compasso % ACORDES.length];
-    ac.forEach((n, i) => vozRhodes(NOTAF(n), t0 + 0.5 * b + i * 0.06, 3.2 * b, c.rhodes));
-    vozBaixo(NOTAF(ac[0] - 12), t0, 1.6 * b, c.baixo);
-    vozBaixo(NOTAF(ac[2] - 12), t0 + 2.5 * b, 1.6 * b, c.baixo);
-    if (c.sino && compasso % 2 === 1) vozSino(NOTAF(ac[3] + 12), t0 + 2 * b, 1);
-    if (c.bateria){
-      vozBumbo(t0, 0.85 * c.bateria);
-      vozBumbo(t0 + 2.5 * b, 0.6 * c.bateria);
-      vozVassoura(t0 + 1 * b, 0.45 * c.bateria);
-      vozVassoura(t0 + 3 * b, 0.45 * c.bateria);
-      for (const k of [0.5, 1.5, 2.5, 3.5]) vozVassoura(t0 + k * b, 0.22 * c.bateria, 0.09);
+    const b = 60 / c.bpm, i4 = compasso % 4;
+    const ac = PROG[i4], rz = RAIZ[i4];
+    for (const [k, forca] of LEVADA){
+      const jt = jitter(0.016), roll = 0.010 + Math.random() * 0.009;
+      const ordem = Math.random() < 0.8 ? ac : ac.slice().reverse();
+      ordem.forEach((n, i) => {
+        tocarCorda(n, t0 + k * b + jt + i * roll, 2.1 * b,
+          forca * (0.84 + Math.random() * 0.3) * c.viola, -0.22 + i * 0.055);
+      });
     }
+    tocarBaixo(rz, t0 + jitter(0.012), 1.9 * b, 0.9 + Math.random() * 0.2);
+    tocarBaixo(rz + 7, t0 + 2 * b + jitter(0.012), 1.9 * b, 0.9 + Math.random() * 0.2);
+    if (i4 === 3) tocarBaixo(rz + 10, t0 + 3 * b + jitter(0.01), 0.9 * b, 0.85);
+    for (let i = 0; i < 8; i++) tocarGanza(t0 + i * 0.5 * b + jitter(0.012), (i % 2 === 0 ? 1 : 0.62) * c.ganza);
+    tocarAro(t0 + 1 * b + jitter(0.014), 1);
+    tocarAro(t0 + 2.5 * b + jitter(0.014), 1);
+    if (c.surdo && compasso % 2 === 1) tocarSurdo(t0 + 2 * b, 1);
   }
   function loop(){
+    try { loopInterno(); } catch(e){ /* áudio nunca derruba o jogo */ }
+  }
+  function loopInterno(){
     if (!tocando || !CONFIG.trilha) return;
     const a = audio(); if (!a) return;
     const c = CLIMAS[tocando], durC = 4 * 60 / c.bpm;
-    if (proxCompasso < a.currentTime) proxCompasso = a.currentTime + 0.08;
+    if (proxCompasso <= a.currentTime + 0.02) proxCompasso = a.currentTime + 0.1;
     while (proxCompasso < a.currentTime + 1.2){
       agendarCompasso(proxCompasso, c);
       compasso++; proxCompasso += durC;
@@ -2792,12 +2844,29 @@ const TRILHA = (() => {
   };
 })();
 function trilhaDoEstado(){
+  try { trilhaEstadoInterno(); } catch(e){}
+}
+function trilhaEstadoInterno(){
   if (estado === "pergunta") TRILHA.tocar(atual && atual.relampago ? "rapida" : "tensa");
   else if (estado === "abertura" || estado === "pausa" || estado === "ranking" || estado === "final") TRILHA.tocar("calma");
   else TRILHA.parar();
 }
+function vozSino(freq, t, vol){
+  const a = audio(); if (!a) return;
+  t = Math.max(t, a.currentTime + 0.002);
+  const g = a.createGain();
+  const v = Math.max(0.0005, CONFIG.volume * 0.16 * vol);
+  g.gain.setValueAtTime(v, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+  [[1, 1], [2.76, 0.28]].forEach(([h, amp]) => {
+    const o = a.createOscillator(); o.type = "sine"; o.frequency.value = freq * h;
+    const hg = a.createGain(); hg.gain.value = amp;
+    o.connect(hg).connect(g); o.start(t); o.stop(t + 1.4);
+  });
+  ligar(a, g, 0);
+}
 
-function sinoRel(f, atraso, vol){ const a = audio(); if (!a) return; vozSino(f, a.currentTime + atraso, vol); }
+function sinoRel(f, atraso, vol){ try { const a = audio(); if (!a) return; vozSino(f, a.currentTime + atraso, vol); } catch(e){} }
 const SOM = {
   abrir(){ sinoRel(523,0,.5); sinoRel(784,.1,.4); },
   pergunta(){ [523,659,784].forEach((f,i)=>sinoRel(f,i*.09,.45)); },
@@ -2817,7 +2886,7 @@ let atual = null;          // {q, opcoes, certa, tema, relampago, inicio, dur}
 let votos = new Map();
 let pausaPedida = false, forcarRelampago = false, ultimoFoiRelampago = false;
 let tick = null, proximo = null, rankTimer = null, ultimoSeg = null;
-let conectado = false, wsChat = null;
+let conectado = false, wsChat = null, avisouCanal = false, timerCanal = null;
 const esperaPontos = new Map();
 
 const win = $("#win"), conteudo = $("#conteudo");
@@ -3658,6 +3727,15 @@ function conectar(){
   let ws;
   try { ws = new WebSocket("wss://irc-ws.chat.twitch.tv:443"); } catch(e){ setTimeout(conectar, 5000); return; }
   ws.onopen = () => {
+    clearTimeout(timerCanal);
+    timerCanal = setTimeout(() => {
+      if (!conectado && !avisouCanal){
+        avisouCanal = true;
+        popup("ATENÇÃO", 'não consegui entrar no chat de <span class="u">' + esc(CONFIG.canal) + '</span><br>confira se esse é o nome que aparece no endereço twitch.tv/<b>nome</b>', 20000);
+        const st = document.getElementById("status");
+        if (st) st.innerHTML = 'canal <b style="color:var(--rosa)">' + esc(CONFIG.canal) + '</b> não encontrado — confira o nome';
+      }
+    }, 12000);
     ws.send("CAP REQ :twitch.tv/tags twitch.tv/commands");
     if (BOT_TOKEN && CONFIG.canal){
       ws.send("PASS oauth:" + BOT_TOKEN);
@@ -3689,7 +3767,7 @@ function lerLinha(linha){
     resto.slice(1, sp).split(";").forEach(kv => { const i = kv.indexOf("="); tags[kv.slice(0,i)] = kv.slice(i+1); });
     resto = resto.slice(sp+1);
   }
-  if (/ ROOMSTATE #/.test(resto)){ conectado = true; atualizarStatus(); return; }
+  if (/ ROOMSTATE #/.test(resto)){ conectado = true; avisouCanal = false; clearTimeout(timerCanal); atualizarStatus(); return; }
   const m = /^:([^!]+)![^ ]+ PRIVMSG #[^ ]+ :(.*)$/.exec(resto);
   if (!m) return;
   const badges = tags["badges"] || "";
